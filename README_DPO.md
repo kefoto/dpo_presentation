@@ -114,8 +114,7 @@ and then feed that into a sigmoid — a simple squashing function that converts 
 This leads to the **Direct Preference Optimization loss**:
 
 $$
-L_{\text{DPO}} =
-- \log P(y_w \succ y_l | x)
+L_{\text{DPO}} = - \log P(y_w \succ y_l | x)
 $$
 
 > Intepretation: The more it disagrees with human preferences, the higher the loss, 
@@ -194,9 +193,9 @@ Go through all human-rated preference pairs to update the model toward human-pre
 ---
 
 ### **2. Δπ = log πθ(y_w|x) - log πθ(y_l|x)**
-- $ \pi_\theta(y|x) $: the **trainable model** (policy).  
-  It gives the probability that the current model generates response $ y $ for prompt $ x $.
-- $ \log \pi_\theta(y|x) $: log-probability of that output.
+- $\pi_\theta(y|x)$: the **trainable model** (policy).  
+  It gives the probability that the current model generates response $y$ for prompt $x$.
+- $\log \pi_\theta(y|x)$: log-probability of that output.
 
 **Δπ** = how much more likely your current model $ \pi_\theta $ thinks the preferred answer $ y_w $ is compared to the rejected one $ y_l $.
 
@@ -211,12 +210,10 @@ $$
 ---
 
 ### **3. Δref = log π_ref(y_w|x) - log π_ref(y_l|x)**
-- $ \pi_{\text{ref}}(y|x) $: the **reference model** (frozen baseline, e.g., SFT or base LM).  
+- $\pi_{\text{ref}}(y|x)$: the **reference model** (frozen baseline, e.g., SFT or base LM).  
 - This computes how *the old model* valued the same two responses.
 
-$$
-\Delta_{\text{ref}} = \log \pi_{\text{ref}}(y_w|x) - \log \pi_{\text{ref}}(y_l|x)
-$$
+$$\Delta_{\text{ref}} = \log \pi_{\text{ref}}(y_w|x) - \log \pi_{\text{ref}}(y_l|x)$$
 
 **Interpretation:**  
 This serves as a **stability anchor**.  
@@ -227,17 +224,15 @@ It tells us how far our fine-tuned model’s preference differs from the referen
 ### **4. p = sigmoid(β * (Δπ - Δref))**
 Applies the **Bradley–Terry preference model** to convert differences into a probability that the model prefers $ y_w $ over $ y_l $:
 
-$$
-p = \sigma(\beta[(\Delta_\pi - \Delta_{\text{ref}})])
-$$
+$$p = \sigma(\beta[(\Delta_\pi - \Delta_{\text{ref}})])$$
 where:
-- $ \sigma(z) = \frac{1}{1 + e^{-z}} $
-- $ \beta $ is a temperature coefficient controlling update strength.
+- $\sigma(z) = \frac{1}{1 + e^{-z}}$
+- $\beta$ is a temperature coefficient controlling update strength.
 
 **Interpretation:**  
-- $ p ≈ 1 $: model confidently agrees with humans.  
-- $ p ≈ 0.5 $: model is uncertain.  
-- $ p < 0.5 $: model prefers the wrong (human-disliked) response.
+- $p ≈ 1$: model confidently agrees with humans.  
+- $p ≈ 0.5$: model is uncertain.  
+- $p < 0.5$: model prefers the wrong (human-disliked) response.
 
 This step turns the **log-prob difference** into a normalized “preference probability.”
 
@@ -251,8 +246,8 @@ L = -\log(p)
 $$
 
 **Interpretation:**  
-- The loss is small if $ p $ is close to 1 (the model’s preference matches humans).  
-- The loss is large if $ p $ is small (the model disagrees).
+- The loss is small if $p$ is close to 1 (the model’s preference matches humans).  
+- The loss is large if $p$ is small (the model disagrees).
 
 **Goal:**  
 Encourage the model to assign higher probability to human-approved completions and lower probability to rejected ones.
@@ -266,12 +261,12 @@ $$
 \theta \leftarrow \theta - \eta \nabla_\theta(L)
 $$
 
-- $ \theta $: model parameters  
-- $ \eta $: learning rate  
-- $ \nabla_\theta(L) $: gradient of the loss with respect to parameters
+- $\theta$: model parameters  
+- $\eta$: learning rate  
+- $\nabla_\theta(L)$: gradient of the loss with respect to parameters
 
 **Interpretation:**  
-The model updates its weights to **increase** $ \pi_\theta(y_w|x) $ relative to $ \pi_\theta(y_l|x) $, effectively **learning to rank human-preferred answers higher**.
+The model updates its weights to **increase** $\pi_\theta(y_w|x)$ relative to $\pi_\theta(y_l|x)$, effectively **learning to rank human-preferred answers higher**.
 
 **Interpretation:**  
 - Increase log-prob of human-preferred outputs  
@@ -394,12 +389,11 @@ The DPO paper fundamentally reshape AI alignment by showing that preference lear
 - **Interpretability:**  
   Logit differences directly measure preference satisfaction.
 
----
 
 
 ---
 
-## 11. Citation
+## 12. Citation
 
 ```bibtex
 @article{rafailov2023direct,
@@ -416,7 +410,7 @@ The DPO paper fundamentally reshape AI alignment by showing that preference lear
 
 ---
 
-### 12 Related Works
+## 13. Related Links
 - Training language models to follow instructions with human feedback (Ouyang et al., 2022 – InstructGPT / RLHF Foundation):https://arxiv.org/abs/2203.02155 
 - Constitutional AI: Harmlessness from AI Feedback (Bai et al., 2022 – AI-generated feedback):https://arxiv.org/abs/2212.08073
 - RLAIF: Scaling Reinforcement Learning from Human Feedback with AI Feedback (Lee et al., 2023 – Reinforcement Learning from AI Feedback): https://arxiv.org/abs/2309.00267
@@ -427,7 +421,7 @@ The DPO paper fundamentally reshape AI alignment by showing that preference lear
 
 ---
 
-## 13. Summary: Why DPO Matters
+## 14. Summary: Why DPO Matters
 
 DPO proves that:
 > **You can align models directly with human preferences—no reinforcement learning required.**
