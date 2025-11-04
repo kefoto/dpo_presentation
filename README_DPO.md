@@ -19,6 +19,8 @@
 - **Instability:** RL training via PPO often diverges
 - **Computation:** expensive sampling loops
 
+
+### Problem Statement
 **Direct Preference Optimization (DPO)** asks a radical question:  
 > Can we achieve the same alignment quality as RLHF — *without* reinforcement learning or a separate reward model?
 
@@ -45,19 +47,20 @@ This equation means that the model (policy π) tries to find a balance between *
 
 where:
 - **Reward term:** $\mathbb{E}_{y\sim\pi}[r(x,y)]$ — encourage outputs that humans like. The higher the reward $r(x,y)$, the more likely the model is to produce that response.
-- **Regularization term:** $D_{KL}(\pi \| \pi_{\text{ref}})$ — penalize outputs that deviate too much from the reference model $\pi_{ref}$, ensuring stability and preventing reward hacking (over optimizing specific patterns).
+- **Regularization term:** $D_{KL}(\pi \| \pi_{\text{ref}})$ — penalize outputs that deviate too much from the reference model $\pi_{ref}$, ensuring stability
 - **β (beta):** controls the tradeoff. A small β means more creative drift (less penalty); a large β means conservative adherence to the reference model.
 
 In simple terms: RLHF trains the model to “be liked by humans, but not forget who it used to be.” It’s a tug-of-war between maximizing human approval and maintaining prior knowledge.
 
 While effective, it requires:
-1. Training a **reward model** from human data  
-2. Running **policy optimization** (e.g., PPO)  
-3. Careful tuning of the KL penalty to avoid *reward hacking*
+1. Defining Supervised Fine Tuning (SFT) (correct structured behavior from x to y)
+2. Training a **reward model** from human preference data  
+3. Running **policy optimization** (e.g., PPO)  
+4. Careful tuning of the KL penalty to avoid *reward hacking* (over optimizing specific patterns)
 
 
 
-**DPO’s goal:** eliminate all three steps, yet preserve equivalent preference learning.
+> **DPO’s goal:** eliminate last three steps, yet preserve equivalent preference learning.
 
 ---
 
@@ -68,22 +71,27 @@ $$
 \pi^*(y|x) \propto \pi_{\text{ref}}(y|x) \exp\left(\frac{r(x,y)}{\beta}\right)
 $$
 
-Rearranging:
+Which says:
+> the probability that the model gives a certain answer y depends on two things: how likely that answer was before fine-tuning (the reference model), and how much reward humans give to that answer.
+
+Then Rearranging the equation to this:
 $$
 r(x,y) = \beta \log \frac{\pi^*(y|x)}{\pi_{\text{ref}}(y|x)} + C
 $$
 
 This equation reveals something profound:
 > The reward function can be expressed **entirely** in terms of the model’s log probabilities.
-> In other words, the model itself secretly contains the reward information.
 
-So instead of training an explicit reward model with numeric values assigned to a subset of responses, we can increase the log-probability of preferred responses or change the gradients relative to the reference model during the model training stage.
+> In other words, we can measure preference directly by comparing how likely the model is to choose one answer versus another.
+
+So instead of training an explicit reward model with numeric values assigned to a subset of responses and additional loops, we can increase the log-probability of preferred responses or change the gradients relative to the reference model during the model training stage.
 
 ---
 
 ## 4. DPO Objective Derivation
 
-Human preference data comes as pairs:  
+> Now that we know reward can be replaced by log probabilities, we can design a new way to teach the model. We can comparing pairs of responses for the same question instead of ranking with numerical values.
+
 $(x, y_w, y_l)$ — where $y_w$ is the preferred response, $y_l$ is the less preferred one.
 
 The Bradley–Terry model gives the probability of preferring $y_w$ over $y_l$:
@@ -93,6 +101,10 @@ P(y_w \succ y_l | x) = \sigma\left(\beta\left[
 \log\frac{\pi(y_w|x)}{\pi_{\text{ref}}(y_w|x)} -
 \log\frac{\pi(y_l|x)}{\pi_{\text{ref}}(y_l|x)}\right]\right)
 $$
+
+> Intepretation: take the difference in confidence between the two answers,
+compare it to what the old reference model believed,
+and then feed that into a sigmoid — a simple squashing function that converts any number into a probability between 0 and 1.”
 
 This leads to the **Direct Preference Optimization loss**:
 
@@ -113,8 +125,8 @@ Where:
 
 ---
 
-![DPO Pipeline Diagram](images/dpo_pipeline.png)
-*Figure 1. Comparison between RLHF (top) and DPO (bottom). DPO eliminates the reward model and RL loop, using a single training pass with preference pairs.*
+![DPO Pipeline Diagram](img/1.PNG)
+*Figure 1. Comparison between RLHF (left) and DPO (right). DPO eliminates the reward model and RL loop, using a single training pass with preference pairs.*
 
 ---
 
@@ -142,6 +154,100 @@ for (x, y_w, y_l) in D:
     # Gradient update
     θ ← θ - η ∇θ(loss)
 ```
+---
+
+
+### **1. for (x, y_w, y_l) in D:**
+- Iterate through the **dataset of human preferences** `D`.
+- Each data point includes:
+  - **x** – the input or prompt  
+  - **y_w** – the *preferred* (winner) output chosen by a human  
+  - **y_l** – the *less preferred* (loser) output  
+
+**Purpose:**  
+Go through all human-rated preference pairs to update the model toward human-preferred behavior.
+
+---
+
+### **2. Δπ = log πθ(y_w|x) - log πθ(y_l|x)**
+- $ \pi_\theta(y|x) $: the **trainable model** (policy).  
+  It gives the probability that the current model generates response $ y $ for prompt $ x $.
+- $ \log \pi_\theta(y|x) $: log-probability of that output.
+
+**Δπ** = how much more likely your current model $ \pi_\theta $ thinks the preferred answer $ y_w $ is compared to the rejected one $ y_l $.
+
+$$
+\Delta_\pi = \log \pi_\theta(y_w|x) - \log \pi_\theta(y_l|x)
+$$
+
+**Interpretation:**  
+- If `Δπ > 0`, the model already agrees with the human preference.  
+- If `Δπ < 0`, the model disagrees — it needs correction.
+
+---
+
+### **3. Δref = log π_ref(y_w|x) - log π_ref(y_l|x)**
+- $ \pi_{\text{ref}}(y|x) $: the **reference model** (frozen baseline, e.g., SFT or base LM).  
+- This computes how *the old model* valued the same two responses.
+
+$$
+\Delta_{\text{ref}} = \log \pi_{\text{ref}}(y_w|x) - \log \pi_{\text{ref}}(y_l|x)
+$$
+
+**Interpretation:**  
+This serves as a **stability anchor**.  
+It tells us how far our fine-tuned model’s preference differs from the reference model’s original preference.
+
+---
+
+### **4. p = sigmoid(β * (Δπ - Δref))**
+Applies the **Bradley–Terry preference model** to convert differences into a probability that the model prefers $ y_w $ over $ y_l $:
+
+$$
+p = \sigma(\beta[(\Delta_\pi - \Delta_{\text{ref}})])
+$$
+where:
+- $ \sigma(z) = \frac{1}{1 + e^{-z}} $
+- $ \beta $ is a temperature coefficient controlling update strength.
+
+**Interpretation:**  
+- $ p ≈ 1 $: model confidently agrees with humans.  
+- $ p ≈ 0.5 $: model is uncertain.  
+- $ p < 0.5 $: model prefers the wrong (human-disliked) response.
+
+This step turns the **log-prob difference** into a normalized “preference probability.”
+
+---
+
+### **5. loss = -log(p)**
+This is the **binary cross-entropy loss** for a correct (preferred) label:
+
+$$
+L = -\log(p)
+$$
+
+**Interpretation:**  
+- The loss is small if $ p $ is close to 1 (the model’s preference matches humans).  
+- The loss is large if $ p $ is small (the model disagrees).
+
+**Goal:**  
+Encourage the model to assign higher probability to human-approved completions and lower probability to rejected ones.
+
+---
+
+### **6. θ ← θ - η ∇θ(loss)**
+The standard **gradient descent update** step:
+
+$$
+\theta \leftarrow \theta - \eta \nabla_\theta(L)
+$$
+
+- $ \theta $: model parameters  
+- $ \eta $: learning rate  
+- $ \nabla_\theta(L) $: gradient of the loss with respect to parameters
+
+**Interpretation:**  
+The model updates its weights to **increase** $ \pi_\theta(y_w|x) $ relative to $ \pi_\theta(y_l|x) $, effectively **learning to rank human-preferred answers higher**.
 
 **Interpretation:**  
 - Increase log-prob of human-preferred outputs  
@@ -161,10 +267,6 @@ for (x, y_w, y_l) in D:
 | **Interpretability** | External reward function | Implicit reward via logits |
 | **Key Hyperparameter** | KL penalty + PPO clip | β (temperature) |
 
----
-
-![Loss Equation Illustration](images/dpo_loss.png)
-*Figure 2. DPO objective visualization: maximize the log-prob gap between preferred and rejected responses relative to the reference model.*
 
 ---
 
@@ -210,6 +312,9 @@ DPO matches or outperforms RLHF in every benchmark, with **simpler training and 
 
 ---
 
+## 9. Questions
+
+---
 ## 9. Broader Impact & Extensions
 
 ### Real-World Adoption
@@ -277,10 +382,3 @@ DPO turns reinforcement learning from human feedback into *supervised learning f
 
 ---
 
-### Closing Insight
-
-DPO reframes alignment elegantly:  
-Instead of teaching a model *what to do* via rewards,  
-it teaches it *what to prefer* — directly, stably, and efficiently.  
-
-*Your language model has always been its own reward model — DPO just makes that explicit.*
