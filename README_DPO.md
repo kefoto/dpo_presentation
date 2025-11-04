@@ -22,8 +22,15 @@
 **Direct Preference Optimization (DPO)** asks a radical question:  
 > Can we achieve the same alignment quality as RLHF — *without* reinforcement learning or a separate reward model?
 
+
+<details>
+<summary>Click to reveal answer</summary>
+
 The answer: **Yes.**  
 DPO reframes RLHF as a *direct supervised optimization problem* using preference pairs.
+
+</details>
+
 
 ---
 
@@ -31,19 +38,24 @@ DPO reframes RLHF as a *direct supervised optimization problem* using preference
 
 Traditional RLHF uses this optimization:
 
-\[
-\max_\pi \mathbb{E}_{y \sim \pi}[r(x,y)] - \beta D_{KL}(\pi \| \pi_{\text{ref}})
-\]
+$$
+\max_\pi \mathbb{E}_{y \sim \pi}[r(x,y)] - \beta D_{KL}(\pi \| \pi_{\text{ref}})$$
+
+This equation means that the model (policy π) tries to find a balance between **two opposing forces**:
 
 where:
-- \( r(x, y) \): human preference–derived reward  
-- \( \pi_{\text{ref}} \): reference policy (SFT model)  
-- \( \beta \): KL temperature (controls conservativeness)  
+- **Reward term:** $\mathbb{E}_{y\sim\pi}[r(x,y)]$ — encourage outputs that humans like. The higher the reward $r(x,y)$, the more likely the model is to produce that response.
+- **Regularization term:** $D_{KL}(\pi \| \pi_{\text{ref}})$ — penalize outputs that deviate too much from the reference model $\pi_{ref}$, ensuring stability and preventing reward hacking (over optimizing specific patterns).
+- **β (beta):** controls the tradeoff. A small β means more creative drift (less penalty); a large β means conservative adherence to the reference model.
+
+In simple terms: RLHF trains the model to “be liked by humans, but not forget who it used to be.” It’s a tug-of-war between maximizing human approval and maintaining prior knowledge.
 
 While effective, it requires:
 1. Training a **reward model** from human data  
 2. Running **policy optimization** (e.g., PPO)  
 3. Careful tuning of the KL penalty to avoid *reward hacking*
+
+
 
 **DPO’s goal:** eliminate all three steps, yet preserve equivalent preference learning.
 
@@ -52,47 +64,48 @@ While effective, it requires:
 ## 3. The Core Idea
 
 Start with RLHF’s optimal policy:
-\[
+$$
 \pi^*(y|x) \propto \pi_{\text{ref}}(y|x) \exp\left(\frac{r(x,y)}{\beta}\right)
-\]
+$$
 
 Rearranging:
-\[
+$$
 r(x,y) = \beta \log \frac{\pi^*(y|x)}{\pi_{\text{ref}}(y|x)} + C
-\]
+$$
 
 This equation reveals something profound:
 > The reward function can be expressed **entirely** in terms of the model’s log probabilities.
+> In other words, the model itself secretly contains the reward information.
 
-So instead of training an explicit reward model, we can train the model itself to increase this implicit reward on human-preferred samples.
+So instead of training an explicit reward model with numeric values assigned to a subset of responses, we can increase the log-probability of preferred responses or change the gradients relative to the reference model during the model training stage.
 
 ---
 
 ## 4. DPO Objective Derivation
 
 Human preference data comes as pairs:  
-\((x, y_w, y_l)\) — where \(y_w\) is the preferred response, \(y_l\) is the less preferred one.
+$(x, y_w, y_l)$ — where $y_w$ is the preferred response, $y_l$ is the less preferred one.
 
-The Bradley–Terry model gives the probability of preferring \(y_w\) over \(y_l\):
+The Bradley–Terry model gives the probability of preferring $y_w$ over $y_l$:
 
-\[
+$$
 P(y_w \succ y_l | x) = \sigma\left(\beta\left[
 \log\frac{\pi(y_w|x)}{\pi_{\text{ref}}(y_w|x)} -
 \log\frac{\pi(y_l|x)}{\pi_{\text{ref}}(y_l|x)}\right]\right)
-\]
+$$
 
 This leads to the **Direct Preference Optimization loss**:
 
-\[
+$$
 L_{\text{DPO}} =
 -\mathbb{E}_{(x, y_w, y_l)} \log \sigma\left(
 \beta\left[\Delta\log\pi - \Delta\log\pi_{\text{ref}}\right]
 \right)
-\]
+$$
 
 Where:
-- \( \Delta\log\pi = \log\pi(y_w|x) - \log\pi(y_l|x) \)
-- \( \Delta\log\pi_{\text{ref}} = \log\pi_{\text{ref}}(y_w|x) - \log\pi_{\text{ref}}(y_l|x) \)
+- $ \Delta\log\pi = \log\pi(y_w|x) - \log\pi(y_l|x) $
+- $ \Delta\log\pi_{\text{ref}} = \log\pi_{\text{ref}}(y_w|x) - \log\pi_{\text{ref}}(y_l|x) $
 
 ✅ **No reward model**  
 ✅ **No PPO or sampling**  
